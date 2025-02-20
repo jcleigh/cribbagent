@@ -315,32 +315,14 @@ function App() {
         <div className="player-area player2">
           <h2>{gameState.players[1].name}</h2>
           <div className={`hand ${gameState.currentPlayer === 1 ? 'current-player' : ''}`}>
-            {gameState.players[1].hand.map((card, index) => (
+            {gameState.players[1].hand.map((_, index) => (
               <div 
                 key={index} 
-                className={`card ${card.suit} ${
+                className={`card back ${
                   isCardDisabled(1, index) ? 'disabled' : ''
-                } ${
-                  gameState.phase === 'playing' && 
-                  (gameState.currentCount + getCardValue(card)) > 31 ? 'unplayable' : ''
                 }`}
-                onClick={() => {
-                  if (!isCardDisabled(1, index)) {
-                    if (gameState.phase === 'discarding') {
-                      discardToCrib(1, index);
-                    } else if (gameState.phase === 'playing') {
-                      playCard(1, index);
-                    }
-                  }
-                }}
               >
-                <div className="card-value">{card.rank}</div>
-                <div className="card-suit">
-                  {card.suit === 'hearts' && '♥'}
-                  {card.suit === 'diamonds' && '♦'}
-                  {card.suit === 'clubs' && '♣'}
-                  {card.suit === 'spades' && '♠'}
-                </div>
+                <div className="card-back-pattern">♠♣♥♦</div>
               </div>
             ))}
           </div>
