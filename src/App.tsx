@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { GameState } from './types/game';
 import { createDeck, shuffleDeck, getCardValue, calculateHandScore } from './utils/gameUtils';
+import { chooseBestDiscard, chooseBestPlay } from './utils/aiUtils';
 import './App.css';
 
 const MAX_SCORE = 121; // Traditional cribbage winning score
@@ -33,7 +34,7 @@ function App() {
     deck: [],
     players: [
       { id: 0, name: 'Player 1', hand: [], score: 0, isCurrent: true },
-      { id: 1, name: 'Player 2', hand: [], score: 0, isCurrent: false }
+      { id: 1, name: 'Computer', hand: [], score: 0, isCurrent: false }  // Changed name to Computer
     ],
     crib: [],
     phase: 'dealing',
@@ -229,6 +230,40 @@ function App() {
   useEffect(() => {
     startNewGame();
   }, []);
+
+  // Add AI move effect
+  useEffect(() => {
+    if (gameState.currentPlayer === 1) { // Computer's turn
+      const makeAIMove = setTimeout(() => {
+        if (gameState.phase === 'discarding') {
+          // Choose and discard two cards
+          const discardIndices = chooseBestDiscard(
+            gameState.players[1].hand,
+            gameState.crib.length === 0 // is dealer
+          );
+          // Discard in reverse order to maintain correct indices
+          discardToCrib(1, discardIndices[1]);
+          discardToCrib(1, discardIndices[0]);
+        } else if (gameState.phase === 'playing') {
+          const bestPlayIndex = chooseBestPlay(
+            gameState.players[1].hand,
+            gameState.currentCount,
+            gameState.playedCards
+          );
+          
+          if (bestPlayIndex === -1) {
+            handleGo();
+          } else {
+            playCard(1, bestPlayIndex);
+          }
+        } else if (gameState.phase === 'counting' && gameState.currentPlayer === 1) {
+          handleHandScoring(1);
+        }
+      }, 1000); // 1 second delay to make AI moves visible
+
+      return () => clearTimeout(makeAIMove);
+    }
+  }, [gameState.currentPlayer, gameState.phase, gameState.players, gameState.currentCount]);
 
   // Update the card rendering to check pendingDiscards
   const isCardDisabled = (playerId: number, cardIndex: number) => {
