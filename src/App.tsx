@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { GameState } from './types/game';
 import { createDeck, shuffleDeck, getCardValue, calculateHandScore } from './utils/gameUtils';
 import { chooseBestDiscard, chooseBestPlay } from './utils/aiUtils';
@@ -30,11 +30,13 @@ const phaseInstructions = {
 };
 
 function App() {
+  const [showNamePrompt, setShowNamePrompt] = useState(true);
+  const [playerName, setPlayerName] = useState('Player 1');
   const [gameState, setGameState] = useState<GameState>({
     deck: [],
     players: [
-      { id: 0, name: 'Player 1', hand: [], score: 0, isCurrent: true },
-      { id: 1, name: 'Computer', hand: [], score: 0, isCurrent: false }  // Changed name to Computer
+      { id: 0, name: playerName, hand: [], score: 0, isCurrent: true },
+      { id: 1, name: 'Computer', hand: [], score: 0, isCurrent: false }
     ],
     crib: [],
     phase: 'dealing',
@@ -46,7 +48,7 @@ function App() {
   // Add state to track pending discards
   const [pendingDiscards, setPendingDiscards] = useState<Set<string>>(new Set());
 
-  const startNewGame = () => {
+  const startNewGame = useCallback(() => {
     const shuffledDeck = shuffleDeck(createDeck());
     const player1Hand = shuffledDeck.slice(0, 6);
     const player2Hand = shuffledDeck.slice(6, 12);
@@ -56,7 +58,7 @@ function App() {
       ...prev,
       deck: remainingDeck,
       players: [
-        { ...prev.players[0], hand: player1Hand },
+        { ...prev.players[0], hand: player1Hand, name: playerName },
         { ...prev.players[1], hand: player2Hand }
       ],
       crib: [],
@@ -66,7 +68,7 @@ function App() {
       currentCount: 0,
       currentPlayer: 0
     }));
-  };
+  }, [playerName]);
 
   const getPlayerDiscardCount = (playerId: number): number => {
     return gameState.crib.filter((_, i) => i % 2 === playerId).length;
@@ -228,12 +230,14 @@ function App() {
   };
 
   useEffect(() => {
-    startNewGame();
-  }, []);
+    if (!showNamePrompt) {
+      startNewGame();
+    }
+  }, [showNamePrompt, startNewGame]); // Add missing dependencies
 
   // Add AI move effect
   useEffect(() => {
-    if (gameState.currentPlayer === 1) { // Computer's turn
+    if (gameState.phase === 'counting' || gameState.currentPlayer === 1) { // Handle counting phase and Computer's turn
       const makeAIMove = setTimeout(() => {
         if (gameState.phase === 'discarding') {
           // Choose and discard two cards
@@ -256,14 +260,35 @@ function App() {
           } else {
             playCard(1, bestPlayIndex);
           }
-        } else if (gameState.phase === 'counting' && gameState.currentPlayer === 1) {
-          handleHandScoring(1);
+        } else if (gameState.phase === 'counting') {
+          // Automatically handle counting for both players
+          handleHandScoring(gameState.currentPlayer);
         }
-      }, 1000); // 1 second delay to make AI moves visible
+      }, 1000); // 1 second delay to make moves visible
 
       return () => clearTimeout(makeAIMove);
     }
-  }, [gameState.currentPlayer, gameState.phase, gameState.players, gameState.currentCount]);
+  }, [
+    gameState.currentPlayer,
+    gameState.phase,
+    gameState.players,
+    gameState.currentCount,
+    gameState.crib.length,
+    gameState.playedCards,
+    discardToCrib,
+    handleGo,
+    handleHandScoring,
+    playCard
+  ]);
+
+  // Add handler for name submission
+  const handleNameSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (playerName.trim()) {
+      setShowNamePrompt(false);
+      startNewGame();
+    }
+  };
 
   // Update the card rendering to check pendingDiscards
   const isCardDisabled = (playerId: number, cardIndex: number) => {
@@ -274,119 +299,205 @@ function App() {
 
   return (
     <div className="game-container">
-      <div className="help-panel">
-        <h2>Cribbage Guide</h2>
-        <div className="phase-info">
-          <h3>{phaseInstructions[gameState.phase].title}</h3>
-          <p>{phaseInstructions[gameState.phase].instructions}</p>
-        </div>
-        <div className="general-rules">
-          <h3>Quick Rules</h3>
-          <ul>
-            <li>First to 121 points wins</li>
-            <li>Each hand has 4 cards after discarding</li>
-            <li>Counting combinations:</li>
-            <li>• 15s = 2 points</li>
-            <li>• Pairs = 2 points</li>
-            <li>• Runs = 1 point per card</li>
-            <li>• Flush = 4+ points</li>
-            <li>• His Nobs = 1 point</li>
-          </ul>
-        </div>
-        <div className="scoring-board">
-          {gameState.players.map((player) => (
-            <div key={player.id} className={`player-score-track player${player.id + 1}`}>
-              <div className="score-label">
-                <span>{player.name}</span>
-                <span>{player.score} / {MAX_SCORE}</span>
-              </div>
-              <div className="score-track">
-                <div 
-                  className="score-fill" 
-                  style={{ width: `${(player.score / MAX_SCORE) * 100}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="main-game-area">
-        <div className="player-area player2">
-          <h2>{gameState.players[1].name}</h2>
-          <div className={`hand ${gameState.currentPlayer === 1 ? 'current-player' : ''}`}>
-            {gameState.players[1].hand.map((_, index) => (
-              <div 
-                key={index} 
-                className={`card back ${
-                  isCardDisabled(1, index) ? 'disabled' : ''
-                }`}
-              >
-                <div className="card-back-pattern">♠♣♥♦</div>
-              </div>
-            ))}
+      {showNamePrompt ? (
+        <div className="name-prompt-overlay">
+          <div className="name-prompt-dialog">
+            <button 
+              type="button"
+              tabIndex={-1}
+              className="name-prompt-close" 
+              onClick={() => {
+                setPlayerName('Player 1');
+                setShowNamePrompt(false);
+              }}
+            >
+              ×
+            </button>
+            <h2>Welcome to Cribbage!</h2>
+            <form onSubmit={handleNameSubmit}>
+              <input
+                type="text"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value.slice(0, 15))}
+                placeholder="Enter your name (max 15 chars)"
+                maxLength={15}
+                required
+                autoFocus
+              />
+              <button type="submit">Start Game</button>
+            </form>
           </div>
-          {gameState.phase === 'discarding' && (
-            <div className={`discard-status ${getPlayerDiscardCount(1) === 2 ? 'complete' : ''}`}>
-              Cards discarded: {getPlayerDiscardCount(1)} / 2
-            </div>
-          )}
-          <div className="score">Score: {gameState.players[1].score}</div>
         </div>
-
-        <div className="game-board">
-          {gameState.phase === 'playing' && (
-            <div className="player-turn-indicator">
-              {gameState.players[gameState.currentPlayer].name}'s turn
-              {!canPlayAnyCard(gameState.currentPlayer) && " (Must say 'Go')"}
+      ) : (
+        <>
+          <div className="help-panel">
+            <h2>Cribbage Guide</h2>
+            <div className="phase-info">
+              <h3>{phaseInstructions[gameState.phase].title}</h3>
+              <p>{phaseInstructions[gameState.phase].instructions}</p>
             </div>
-          )}
-          
-          {gameState.phase === 'discarding' && (
-            <div className="player-turn-indicator">
-              {gameState.players[gameState.currentPlayer].name}'s turn to discard
+            <div className="general-rules">
+              <h3>Quick Rules</h3>
+              <ul>
+                <li>First to 121 points wins</li>
+                <li>Each hand has 4 cards after discarding</li>
+                <li>Counting combinations:</li>
+                <li>• 15s = 2 points</li>
+                <li>• Pairs = 2 points</li>
+                <li>• Runs = 1 point per card</li>
+                <li>• Flush = 4+ points</li>
+                <li>• His Nobs = 1 point</li>
+              </ul>
             </div>
-          )}
-          
-          {gameState.cutCard && (
-            <div className="cut-card">
-              <h3>Cut Card</h3>
-              <div className={`card ${gameState.cutCard.suit}`}>
-                <div className="card-value">{gameState.cutCard.rank}</div>
-                <div className="card-suit">
-                  {gameState.cutCard.suit === 'hearts' && '♥'}
-                  {gameState.cutCard.suit === 'diamonds' && '♦'}
-                  {gameState.cutCard.suit === 'clubs' && '♣'}
-                  {gameState.cutCard.suit === 'spades' && '♠'}
+            <div className="scoring-board">
+              {gameState.players.map((player) => (
+                <div key={player.id} className={`player-score-track player${player.id + 1}`}>
+                  <div className="score-label">
+                    <span>{player.name}</span>
+                    <span>{player.score} / {MAX_SCORE}</span>
+                  </div>
+                  <div className="score-track">
+                    <div 
+                      className="score-fill" 
+                      style={{ width: `${(player.score / MAX_SCORE) * 100}%` }}
+                    />
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
-          )}
-          
-          <div className="crib">
-            {gameState.crib.map((_, index) => (
-              <div key={index} className="card back">
-                <div className="card-back-pattern">♠♣♥♦</div>
-              </div>
-            ))}
           </div>
 
-          {gameState.phase === 'dealing' && (
-            <div className="dealing-phase">
-              <button 
-                className="deal-button"
-                onClick={startNewGame}
-              >
-                Deal Next Hand
-              </button>
+          <div className="main-game-area">
+            <div className="player-area player2">
+              <h2>{gameState.players[1].name}</h2>
+              <div className={`hand ${gameState.currentPlayer === 1 ? 'current-player' : ''}`}>
+                {gameState.players[1].hand.map((_, index) => (
+                  <div 
+                    key={index} 
+                    className={`card back ${
+                      isCardDisabled(1, index) ? 'disabled' : ''
+                    }`}
+                  >
+                    <div className="card-back-pattern">♠♣♥♦</div>
+                  </div>
+                ))}
+              </div>
+              {gameState.phase === 'discarding' && (
+                <div className={`discard-status ${getPlayerDiscardCount(1) === 2 ? 'complete' : ''}`}>
+                  Cards discarded: {getPlayerDiscardCount(1)} / 2
+                </div>
+              )}
+              <div className="score">Score: {gameState.players[1].score}</div>
             </div>
-          )}
 
-          {gameState.phase === 'playing' && (
-            <>
-              <div className="played-cards">
-                {gameState.playedCards.map((card, index) => (
-                  <div key={index} className={`card ${card.suit}`}>
+            <div className="game-board">
+              {gameState.phase === 'playing' && (
+                <div className="player-turn-indicator">
+                  {gameState.players[gameState.currentPlayer].name}'s turn
+                  {!canPlayAnyCard(gameState.currentPlayer) && " (Must say 'Go')"}
+                </div>
+              )}
+              
+              {gameState.phase === 'discarding' && (
+                <div className="player-turn-indicator">
+                  {gameState.players[gameState.currentPlayer].name}'s turn to discard
+                </div>
+              )}
+
+              {gameState.phase === 'counting' && (
+                <div className="player-turn-indicator">
+                  Counting hands...
+                </div>
+              )}
+              
+              {gameState.cutCard && (
+                <div className="cut-card">
+                  <h3>Cut Card</h3>
+                  <div className={`card ${gameState.cutCard.suit}`}>
+                    <div className="card-value">{gameState.cutCard.rank}</div>
+                    <div className="card-suit">
+                      {gameState.cutCard.suit === 'hearts' && '♥'}
+                      {gameState.cutCard.suit === 'diamonds' && '♦'}
+                      {gameState.cutCard.suit === 'clubs' && '♣'}
+                      {gameState.cutCard.suit === 'spades' && '♠'}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <div className="crib">
+                {gameState.crib.map((_, index) => (
+                  <div key={index} className="card back">
+                    <div className="card-back-pattern">♠♣♥♦</div>
+                  </div>
+                ))}
+              </div>
+
+              {gameState.phase === 'dealing' && (
+                <div className="dealing-phase">
+                  <button 
+                    className="deal-button"
+                    onClick={startNewGame}
+                  >
+                    Deal Next Hand
+                  </button>
+                </div>
+              )}
+
+              {gameState.phase === 'playing' && (
+                <>
+                  <div className="played-cards">
+                    {gameState.playedCards.map((card, index) => (
+                      <div key={index} className={`card ${card.suit}`}>
+                        <div className="card-value">{card.rank}</div>
+                        <div className="card-suit">
+                          {card.suit === 'hearts' && '♥'}
+                          {card.suit === 'diamonds' && '♦'}
+                          {card.suit === 'clubs' && '♣'}
+                          {card.suit === 'spades' && '♠'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {!canPlayAnyCard(gameState.currentPlayer) && (
+                    <button 
+                      className="go-button"
+                      onClick={handleGo}
+                    >
+                      Say "Go"
+                    </button>
+                  )}
+                </>
+              )}
+
+              {gameState.phase === 'playing' && (
+                <div className="count">Count: {gameState.currentCount}</div>
+              )}
+            </div>
+
+            <div className="player-area player1">
+              <h2>{gameState.players[0].name}</h2>
+              <div className={`hand ${gameState.currentPlayer === 0 ? 'current-player' : ''}`}>
+                {gameState.players[0].hand.map((card, index) => (
+                  <div 
+                    key={index} 
+                    className={`card ${card.suit} ${
+                      isCardDisabled(0, index) ? 'disabled' : ''
+                    } ${
+                      gameState.phase === 'playing' && 
+                      (gameState.currentCount + getCardValue(card)) > 31 ? 'unplayable' : ''
+                    }`}
+                    onClick={() => {
+                      if (!isCardDisabled(0, index)) {
+                        if (gameState.phase === 'discarding') {
+                          discardToCrib(0, index);
+                        } else if (gameState.phase === 'playing' && 
+                                   (gameState.currentCount + getCardValue(card)) <= 31) {
+                          playCard(0, index);
+                        }
+                      }
+                    }}
+                  >
                     <div className="card-value">{card.rank}</div>
                     <div className="card-suit">
                       {card.suit === 'hearts' && '♥'}
@@ -397,83 +508,24 @@ function App() {
                   </div>
                 ))}
               </div>
-              {!canPlayAnyCard(gameState.currentPlayer) && (
-                <button 
-                  className="go-button"
-                  onClick={handleGo}
-                >
-                  Say "Go"
-                </button>
-              )}
-            </>
-          )}
-
-          {gameState.phase === 'counting' && (
-            <div className="counting-phase">
-              <button 
-                className="count-hand-button"
-                onClick={() => handleHandScoring(gameState.currentPlayer)}
-                disabled={gameState.currentPlayer !== 0 && gameState.currentPlayer !== 1}
-              >
-                Count {gameState.players[gameState.currentPlayer].name}'s Hand
-              </button>
-            </div>
-          )}
-
-          {gameState.phase === 'playing' && (
-            <div className="count">Count: {gameState.currentCount}</div>
-          )}
-        </div>
-
-        <div className="player-area player1">
-          <h2>{gameState.players[0].name}</h2>
-          <div className={`hand ${gameState.currentPlayer === 0 ? 'current-player' : ''}`}>
-            {gameState.players[0].hand.map((card, index) => (
-              <div 
-                key={index} 
-                className={`card ${card.suit} ${
-                  isCardDisabled(0, index) ? 'disabled' : ''
-                } ${
-                  gameState.phase === 'playing' && 
-                  (gameState.currentCount + getCardValue(card)) > 31 ? 'unplayable' : ''
-                }`}
-                onClick={() => {
-                  if (!isCardDisabled(0, index)) {
-                    if (gameState.phase === 'discarding') {
-                      discardToCrib(0, index);
-                    } else if (gameState.phase === 'playing' && 
-                               (gameState.currentCount + getCardValue(card)) <= 31) {
-                      playCard(0, index);
-                    }
-                  }
-                }}
-              >
-                <div className="card-value">{card.rank}</div>
-                <div className="card-suit">
-                  {card.suit === 'hearts' && '♥'}
-                  {card.suit === 'diamonds' && '♦'}
-                  {card.suit === 'clubs' && '♣'}
-                  {card.suit === 'spades' && '♠'}
+              {gameState.phase === 'discarding' && (
+                <div className={`discard-status ${getPlayerDiscardCount(0) === 2 ? 'complete' : ''}`}>
+                  Cards discarded: {getPlayerDiscardCount(0)} / 2
                 </div>
-              </div>
-            ))}
-          </div>
-          {gameState.phase === 'discarding' && (
-            <div className={`discard-status ${getPlayerDiscardCount(0) === 2 ? 'complete' : ''}`}>
-              Cards discarded: {getPlayerDiscardCount(0)} / 2
+              )}
+              <div className="score">Score: {gameState.players[0].score}</div>
             </div>
-          )}
-          <div className="score">Score: {gameState.players[0].score}</div>
-        </div>
 
-        {gameState.phase === 'gameOver' && (
-          <div className="winning-message">
-            <h1>🎉 Winner! 🎉</h1>
-            <p>{gameState.players.find(p => p.score >= MAX_SCORE)?.name} has won!</p>
-            <button onClick={startNewGame}>Play Again</button>
+            {gameState.phase === 'gameOver' && (
+              <div className="winning-message">
+                <h1>🎉 Winner! 🎉</h1>
+                <p>{gameState.players.find(p => p.score >= MAX_SCORE)?.name} has won!</p>
+                <button onClick={startNewGame}>Play Again</button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }
